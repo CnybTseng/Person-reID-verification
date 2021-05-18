@@ -17,6 +17,7 @@ import os
 import scipy.io
 import yaml
 from model import ft_net, ft_net_dense, PCB, PCB_test
+from osnet import osnet_x1_0
 
 #fp16
 try:
@@ -37,6 +38,7 @@ parser.add_argument('--use_dense', action='store_true', help='use densenet121' )
 parser.add_argument('--PCB', action='store_true', help='use PCB' )
 parser.add_argument('--multi', action='store_true', help='use multiple query' )
 parser.add_argument('--fp16', action='store_true', help='use fp16.' )
+parser.add_argument('--use_osnet', action='store_true', help='use OSNet x1_0')
 
 opt = parser.parse_args()
 ###load config###
@@ -197,6 +199,8 @@ if opt.multi:
 print('-------test-----------')
 if opt.use_dense:
     model_structure = ft_net_dense(751)
+elif opt.use_osnet:
+    model_structure = osnet_x1_0(751)
 else:
     model_structure = ft_net(751)
 

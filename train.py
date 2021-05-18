@@ -25,6 +25,7 @@ from random_erasing import RandomErasing
 from tripletfolder import TripletFolder
 import yaml
 from shutil import copyfile
+from osnet import osnet_x1_0, verifos_net
 
 version =  torch.__version__
 
@@ -43,6 +44,7 @@ parser.add_argument('--alpha', default=1.0, type=float, help='alpha')
 parser.add_argument('--erasing_p', default=0, type=float, help='Random Erasing probability, in [0,1]')
 parser.add_argument('--use_dense', action='store_true', help='use densenet121' )
 parser.add_argument('--PCB', action='store_true', help='use PCB+ResNet50' )
+parser.add_argument('--use_osnet', action='store_true', help='use OSNet x1_0')
 opt = parser.parse_args()
 
 data_dir = opt.data_dir
@@ -245,7 +247,8 @@ def train_model(model, model_verif, criterion, optimizer, scheduler, num_epochs=
             # deep copy the model
 
             if epoch%10 == 9:
-                save_network(model, epoch)
+                save_network(model, epoch, 'net')
+                save_network(model_verif, epoch, 'net_verif')
             draw_curve(epoch)
             last_model_wts = model.state_dict()
 
@@ -258,7 +261,8 @@ def train_model(model, model_verif, criterion, optimizer, scheduler, num_epochs=
 
     # load best model weights
     model.load_state_dict(last_model_wts)
-    save_network(model, 'last')
+    save_network(model, 'last', 'net')
+    save_network(model_verif, 'last', 'net_verif')
     return model
 
 
@@ -283,8 +287,8 @@ def draw_curve(current_epoch):
 ######################################################################
 # Save model
 #---------------------------
-def save_network(network, epoch_label):
-    save_filename = 'net_%s.pth'% epoch_label
+def save_network(network, epoch_label, type='net'):
+    save_filename = '%s_%s.pth'% (type, epoch_label)
     save_path = os.path.join('./model',name,save_filename)
     torch.save(network.cpu().state_dict(), save_path)
     if torch.cuda.is_available:
@@ -300,13 +304,18 @@ def save_network(network, epoch_label):
 
 if opt.use_dense:
     model = ft_net_dense(len(class_names))
+elif opt.use_osnet:
+    model = osnet_x1_0(num_classes=len(class_names))
 else:
     model = ft_net(len(class_names))
 
 if opt.PCB:
     model = PCB(len(class_names))
 
-model_verif = verif_net()
+if opt.use_osnet:
+    model_verif = verifos_net()
+else:
+    model_verif = verif_net()
 print(model)
 print(model_verif)
 
@@ -317,14 +326,20 @@ if use_gpu:
 criterion = nn.CrossEntropyLoss()
 
 if not opt.PCB:
-    ignored_params = list(map(id, model.model.fc.parameters() )) + list(map(id, model.classifier.parameters() ))
-    base_params = filter(lambda p: id(p) not in ignored_params, model.parameters())
-    optimizer_ft = optim.SGD([
-             {'params': base_params, 'lr': 0.1*opt.lr},
-             {'params': model.model.fc.parameters(), 'lr': opt.lr},
-             {'params': model.classifier.parameters(), 'lr': opt.lr},
-             {'params': model_verif.classifier.parameters(), 'lr': opt.lr}
-         ], weight_decay=5e-4, momentum=0.9, nesterov=True)
+    if not opt.use_osnet:
+        ignored_params = list(map(id, model.model.fc.parameters() )) + list(map(id, model.classifier.parameters() ))
+        base_params = filter(lambda p: id(p) not in ignored_params, model.parameters())
+        optimizer_ft = optim.SGD([
+                 {'params': base_params, 'lr': 0.1*opt.lr},
+                 {'params': model.model.fc.parameters(), 'lr': opt.lr},
+                 {'params': model.classifier.parameters(), 'lr': opt.lr},
+                 {'params': model_verif.classifier.parameters(), 'lr': opt.lr}
+             ], weight_decay=5e-4, momentum=0.9, nesterov=True)
+    else:
+        optimizer_ft = optim.SGD([
+            {'params': model.parameters(), 'lr': opt.lr},
+            {'params': model_verif.parameters(), 'lr': opt.lr}],
+            weight_decay=5e-4, momentum=0.9, nesterov=True)
 else:
     ignored_params = list(map(id, model.model.fc.parameters() ))
     ignored_params += (list(map(id, model.classifier0.parameters() )) 
